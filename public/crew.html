@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Crew — Fleet Floor Control</title><link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="crew-wrap">
+  <div id="joinCard" class="crew-card">
+    <div class="eyebrow">CREW CONSOLE</div><h1>Join Fleet Room</h1>
+    <div class="field"><label>Room code</label><input id="roomCode" maxlength="16"></div>
+    <div class="field"><label>Your ship</label><select id="shipSelect"><option value="">Open the room first...</option></select></div>
+    <button class="primary-wide" onclick="joinCrew()">Join as This Ship</button>
+    <div id="joinMessage" class="message"></div>
+  </div>
+
+  <div id="consoleCard" class="crew-card" style="display:none">
+    <div class="eyebrow">CREW CONSOLE</div>
+    <div id="crewStatus" class="crew-status"><div class="small-note">YOUR SHIP</div><div id="shipName" class="big-ship-name"></div><div id="statusText" class="small-note" style="margin-top:8px"></div></div>
+    <button id="requestButton" class="request-wide" onclick="requestFloor()">REQUEST FLOOR</button>
+    <button id="cancelButton" class="cancel-wide" onclick="cancelRequest()" style="display:none">Cancel Request</button>
+    <p class="small-note" style="text-align:center">Leave this page open during the discussion. Your screen updates automatically when the instructor recognizes your crew.</p>
+  </div>
+</div>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket=io(); let roomCode=""; let shipId=null; let state=null;
+const params=new URLSearchParams(location.search);
+document.getElementById("roomCode").value=params.get("room")||localStorage.getItem("fleetRoom")||"";
+document.getElementById("roomCode").addEventListener("change",loadShips);
+setTimeout(loadShips,200);
+
+function loadShips(){
+  // We need a live room to obtain the current names. Join temporarily is not necessary:
+  // use a crew join only after a ship is selected, so initially show numbered choices.
+  const select=document.getElementById("shipSelect"); select.innerHTML='<option value="">Choose your ship...</option>';
+  for(let i=0;i<15;i++){const o=document.createElement("option");o.value=i;o.textContent=`Ship ${i+1}`;select.appendChild(o);}
+}
+function joinCrew(){
+  roomCode=document.getElementById("roomCode").value.trim().toUpperCase(); shipId=Number(document.getElementById("shipSelect").value);
+  if(!roomCode||!Number.isInteger(shipId)){document.getElementById("joinMessage").textContent="Enter the room code and choose your ship.";return;}
+  socket.emit("join-crew",{roomCode,shipId},res=>{
+    if(!res.ok){document.getElementById("joinMessage").textContent=res.error;return;}
+    state=res.state; localStorage.setItem("fleetRoom",roomCode);
+    document.getElementById("joinCard").style.display="none";document.getElementById("consoleCard").style.display="block";render();
+  });
+}
+socket.on("state",s=>{if(s.code===roomCode){state=s;render();}});
+function render(){
+  if(!state)return; const ship=state.ships.find(s=>s.id===shipId); if(!ship)return;
+  document.getElementById("shipName").textContent=ship.name;
+  const card=document.getElementById("crewStatus"), req=document.getElementById("requestButton"), cancel=document.getElementById("cancelButton"), txt=document.getElementById("statusText");
+  card.className="crew-status "+ship.status;
+  if(ship.status==="idle"){txt.textContent="Standing by";req.style.display="block";cancel.style.display="none";req.disabled=false;}
+  if(ship.status==="requested"){const p=state.queue.indexOf(shipId)+1;txt.textContent=`Request sent • Queue position ${p}`;req.style.display="none";cancel.style.display="block";}
+  if(ship.status==="active"){txt.textContent="YOU HAVE BEEN RECOGNIZED";req.style.display="none";cancel.style.display="none";}
+}
+function requestFloor(){socket.emit("request-floor",{roomCode,shipId});}
+function cancelRequest(){socket.emit("cancel-request",{roomCode,shipId});}
+</script></body></html>

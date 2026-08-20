@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Instructor — Fleet Floor Control</title><link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<section id="joinWrap" class="join-wrap">
+  <div class="join-card">
+    <div class="eyebrow">INSTRUCTOR</div>
+    <h1>Open Fleet Room</h1>
+    <div class="field"><label>Room code</label><input id="roomCode" value="FLEET15" maxlength="16"></div>
+    <div class="field"><label>Instructor PIN</label><input id="pin" type="password" placeholder="Instructor PIN"></div>
+    <button class="primary-wide" onclick="joinInstructor()">Open Room</button>
+    <div id="joinMessage" class="message"></div>
+    <p class="small-note">For deployment, set the INSTRUCTOR_PIN environment variable to something only you know.</p>
+  </div>
+</section>
+
+<section id="appWrap" style="display:none">
+<header>
+  <div><h1>FLEET FLOOR CONTROL</h1><div class="subtitle">15-ship live discussion queue • Room <span id="roomBadge" class="room-badge"></span></div></div>
+  <div class="header-actions">
+    <button class="btn-secondary" onclick="openEditor()">Edit Ship Names</button>
+    <button class="btn-secondary" onclick="copyCrewLink()">Copy Crew Link</button>
+    <button class="btn-secondary" onclick="goFullscreen()">Full Screen</button>
+    <button class="btn-danger" onclick="resetRoom()">Reset All</button>
+  </div>
+</header>
+<main class="app">
+  <div class="topline">
+    <section><div id="fleet" class="fleet-grid"></div></section>
+    <aside class="queue-panel">
+      <h2>Request Queue</h2><div id="queue"></div>
+      <div class="join-link">Crew page: <span id="crewLinkText"></span></div>
+    </aside>
+  </div>
+</main>
+</section>
+
+<dialog id="editor"><h2>Edit Ship Names</h2><div id="editGrid" class="edit-grid"></div>
+<div class="dialog-actions"><button class="btn-secondary" onclick="document.getElementById('editor').close()">Cancel</button><button class="btn-active" onclick="saveNames()">Save</button></div></dialog>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket=io(); let roomCode=""; let state=null;
+function joinInstructor(){
+  roomCode=document.getElementById("roomCode").value.trim().toUpperCase();
+  const pin=document.getElementById("pin").value;
+  socket.emit("join-instructor",{roomCode,pin},res=>{
+    if(!res.ok){document.getElementById("joinMessage").textContent=res.error;return;}
+    state=res.state; document.getElementById("joinWrap").style.display="none"; document.getElementById("appWrap").style.display="block";
+    document.getElementById("roomBadge").textContent=roomCode;
+    const crewUrl=`${location.origin}/crew.html?room=${encodeURIComponent(roomCode)}`;
+    document.getElementById("crewLinkText").textContent=crewUrl;
+    render();
+  });
+}
+socket.on("state",s=>{if(s.code===roomCode){state=s;render();}});
+function render(){
+  if(!state)return;
+  const fleet=document.getElementById("fleet"); fleet.innerHTML="";
+  state.ships.forEach(ship=>{
+    const qPos=state.queue.indexOf(ship.id);
+    let status="Standing By"; if(ship.status==="requested")status=`Requesting • Queue ${qPos+1}`; if(ship.status==="active")status="Recognized Speaker";
+    const div=document.createElement("div"); div.className=`ship ${ship.status}`;
+    div.innerHTML=`<div class="status">${status}</div><div class="name">${esc(ship.name)}</div><div class="ship-actions"><button class="recognize-btn" onclick="recognize(${ship.id})">Recognize</button><button class="clear-btn" onclick="clearShip(${ship.id})">Clear</button></div>`;
+    fleet.appendChild(div);
+  });
+  const q=document.getElementById("queue"); q.innerHTML="";
+  if(!state.queue.length){q.innerHTML='<div class="queue-empty">No ships are requesting recognition.</div>';return;}
+  state.queue.forEach((id,idx)=>{
+    const ship=state.ships.find(s=>s.id===id), item=document.createElement("div"); item.className="queue-item";
+    item.innerHTML=`<div><span class="queue-num">${idx+1}</span><b>${esc(ship.name)}</b></div><button class="recognize-btn" onclick="recognize(${id})">Recognize</button>`; q.appendChild(item);
+  });
+}
+function recognize(id){socket.emit("recognize",{roomCode,shipId:id});}
+function clearShip(id){socket.emit("clear-ship",{roomCode,shipId:id});}
+function resetRoom(){socket.emit("reset-room",{roomCode});}
+function openEditor(){
+  const g=document.getElementById("editGrid");g.innerHTML="";
+  state.ships.forEach((s,i)=>{const d=document.createElement("div");d.innerHTML=`<label class="small-note">Ship ${i+1}</label><input id="n-${i}" value="${attr(s.name)}">`;g.appendChild(d);});
+  document.getElementById("editor").showModal();
+}
+function saveNames(){const names=state.ships.map((_,i)=>document.getElementById(`n-${i}`).value.trim());socket.emit("save-names",{roomCode,names},res=>{if(res.ok)document.getElementById("editor").close();});}
+async function copyCrewLink(){const url=`${location.origin}/crew.html?room=${encodeURIComponent(roomCode)}`;try{await navigator.clipboard.writeText(url);alert("Crew link copied.");}catch(e){prompt("Copy this crew link:",url);}}
+function goFullscreen(){if(document.documentElement.requestFullscreen)document.documentElement.requestFullscreen();}
+function esc(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));}
+function attr(v){return String(v).replace(/"/g,"&quot;");}
+</script></body></html>

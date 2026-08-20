@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: fleet-floor-control
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: INSTRUCTOR_PIN
+        sync: false
